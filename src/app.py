@@ -23,16 +23,17 @@ from cipher_tools import (
     find_nonzero_kernel_vector,
     matrix_det_mod,
     matrix_inverse_mod,
+    mod_inverse,
     text_to_vectors,
     vectors_to_text,
 )
 from visualize import CASES, draw_bijective_scatter, draw_heatmap, kernel_vectors
 
-PRESET_SHORT_NAMES = {
-    1: "Canonical Invertible",
-    2: "Strict Singularity",
-    3: "Even Factor 2",
-    4: "Odd Factor 13",
+PRESET_LABELS = {
+    1: "Invertible (det=9)",
+    2: "Det=0 (Strict)",
+    3: "Factor 2 (det=24)",
+    4: "Factor 13 (det=13)",
 }
 
 st.set_page_config(
@@ -41,16 +42,14 @@ st.set_page_config(
     layout="wide",
 )
 
+# Theme-neutral tweaks only — no hardcoded background/text colors, so this
+# reads correctly in both Streamlit's light and dark modes. Native widgets
+# (st.metric, st.success/error/warning) already adapt to the active theme;
+# this just trims the default top padding.
 st.markdown(
     """
     <style>
     .block-container { padding-top: 2rem; }
-    div[data-testid="stMetric"] {
-        background-color: #ffffff;
-        border: 1px solid #d7dee6;
-        border-radius: 8px;
-        padding: 12px 16px;
-    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -87,9 +86,7 @@ with st.sidebar:
 
     st.subheader("Preset Evaluation Cases")
     for case in CASES:
-        det = matrix_det_mod(case["K"])
-        g = int(np.gcd(det, MOD))
-        label = f"Preset {case['id']}: {PRESET_SHORT_NAMES[case['id']]} (det={det}, gcd={g})"
+        label = f"Preset {case['id']}: {PRESET_LABELS[case['id']]}"
         st.button(label, on_click=load_preset, args=(case,), use_container_width=True)
 
 K = np.array([
@@ -143,23 +140,55 @@ st.dataframe(rows, hide_index=True, use_container_width=True)
 
 st.write(f"**Ciphertext (transmitted):** `{ciphertext}`")
 
-# ---- Recovery -----------------------------------------------------------
+# ---- Recovery / Diagnostics --------------------------------------------
 
 st.subheader("Recovery")
 
-if invertible:
-    K_inv = matrix_inverse_mod(K)
-    decoded = decode(ciphertext, K)
-    st.success(f"Decryption succeeded — recovered plaintext: **{decoded}**")
-    st.write("K⁻¹ mod 26 =")
-    st.write(K_inv)
-else:
-    st.error("**SingularKeyError:** Inversion Impossible (gcd(det(K), 26) ≠ 1)")
+original_letter_count = sum(c.isalpha() for c in message)
+was_padded = original_letter_count % 2 != 0
 
+if invertible:
+    st.success("🔓 Key Invertible over ℤ₂₆² — decryption is well-defined.")
+
+    det_inv = mod_inverse(det)
+    K_inv = matrix_inverse_mod(K)
+    st.write(f"**det⁻¹ mod 26** = {det_inv}  (verify: {det} × {det_inv} mod 26 = {(det * det_inv) % MOD})")
+    st.write("**K⁻¹ mod 26** =")
+    st.write(K_inv)
+
+    st.markdown("**Decoded Pipeline**")
+    decode_rows = [
+        {
+            "Digraph #": i + 1,
+            "Ciphertext w": vectors_to_text([cv]),
+            "K⁻¹·w mod 26": ((K_inv @ cv) % MOD).tolist(),
+            "Recovered Plaintext": vectors_to_text([(K_inv @ cv) % MOD]),
+        }
+        for i, cv in enumerate(cipher_vectors)
+    ]
+    st.dataframe(decode_rows, hide_index=True, use_container_width=True)
+
+    decoded = decode(ciphertext, K)
+    if was_padded:
+        st.write(f"**Recovered Plaintext:** `{decoded[:-1]}`**`{decoded[-1]}`** "
+                  f"(trailing **{decoded[-1]}** is the padding character added at encode time, "
+                  f"not part of the original message)")
+    else:
+        st.write(f"**Recovered Plaintext:** `{decoded}`")
+else:
+    st.error(f"**SingularKeyError:** Non-invertible Transformation (gcd(det, 26) = {gcd} ≠ 1)")
+    st.markdown(
+        "Scalar modular inverse does not exist. Decryption is mathematically impossible "
+        "due to loss of injectivity."
+    )
+
+    st.markdown("**Diagnostic Engine**")
     v0 = find_nonzero_kernel_vector(K)
     kernel_size = len(kernel_vectors(K))
-    st.write(f"**Kernel size** |ker(T)| = {kernel_size}")
-    st.write(f"**Null vector** v0 (K·v0 ≡ 0 mod 26): {v0.tolist()}")
+    image_size = MOD * MOD // kernel_size
+    st.write(f"**Null vector** v0 = {v0.tolist()}ᵀ, where (K·v0) mod 26 = [0, 0]ᵀ")
+    st.write(f"**Kernel cardinality** |ker(T)| = {kernel_size}")
+    st.write(f"**Image contraction** |Im(T)| = 676 / {kernel_size} = {image_size}")
 
     v1 = plain_vectors[0]
     v2 = (v1 + v0) % MOD
@@ -167,10 +196,14 @@ else:
     w2 = (K @ v2) % MOD
     assert np.array_equal(w1, w2), "sanity check: v1 and v1+v0 must collide"
 
-    d1, d2, c = vectors_to_text([v1]), vectors_to_text([v2]), vectors_to_text([w1])
+    d1, d2 = vectors_to_text([v1]), vectors_to_text([v2])
+    c1, c2 = vectors_to_text([w1]), vectors_to_text([w2])
     st.warning(
-        f"**Collision demo:** Digraph 1 (\"{d1}\") and Digraph 2 (\"{d2}\") "
-        f"both map to Ciphertext (\"{c}\") — decoding is many-to-one, not just hard."
+        f"**Explicit Collision Proof**\n\n"
+        f"- Digraph 1: v1 = {v1.tolist()}ᵀ (\"{d1}\") → (K·v1) mod 26 = {w1.tolist()}ᵀ (\"{c1}\")\n"
+        f"- Digraph 2: v2 = (v1 + v0) mod 26 = {v2.tolist()}ᵀ (\"{d2}\") → (K·v2) mod 26 = {w2.tolist()}ᵀ (\"{c2}\")\n\n"
+        f"Two distinct plaintexts collapse to the identical ciphertext coordinate. "
+        f"Information is destroyed."
     )
 
 # ---- Visualization -----------------------------------------------------
