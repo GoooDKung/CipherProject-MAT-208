@@ -5,6 +5,8 @@
 
 > This file is the single source of truth for the repository. Every team member — and Claude Code, when reevaluating the project — should read it before writing code or report sections. If scope, team size, or requirements change, update this file first.
 
+**Repo**: `https://github.com/GoooDKung/CipherProject-MAT-208` (private). Clone/push there for anyone on the team to access the project from any device — this is now the canonical remote, not any single member's local folder.
+
 ---
 
 ## 0. Project Registration Info
@@ -33,20 +35,22 @@ Fill in the actual path as each file is created. Claude Code should read this ta
 | CLI / interactive key tester | Interactive testing loop (§4.2), also scriptable via `--message`/`--key` flags | `src/terminal_tools.py` |
 | Visualization script | Standardized 4-case evaluation suite (§4.2, `--batch` / default): `figures/case1_invertible_scatter.png` (det=9, bijective scatter) + `figures/case1_invertible_heatmap.png` (same key, \|ker\|=1 heatmap baseline), `figures/case2_singular_det0.png` (det=0, \|ker\|=26), `figures/case3_singular_factor2.png` (det=24, gcd=2, \|ker\|=2), `figures/case4_singular_factor13.png` (det=13, gcd=13, \|ker\|=13). All numerically verified against \|ker T\|=gcd(det K,26) and \|Im T\|=676/\|ker T\|. Single-key mode (`--invertible-key`/`--singular-key`/`--out`) still available for ad hoc keys | `src/visualize.py` |
 | Test / verification script | Unit tests (unittest, 15 cases) checking §2–3 worked examples: modular inverse, K·K⁻¹=I, encode/decode round trip, linearity axiom, singular-key collision, known-plaintext attack recovery | `src/test_verify.py` (renamed from `test-verify.py` — same hyphen-import issue) |
-| Live-demo GUI | PySide6 desktop app for the presentation: message + key-matrix entry, the 4 preset evaluation cases, a "Run Transformation" button (plots render on demand, not per-keystroke), a text report pane, and the same scatter/heatmap plots embedded live via `FigureCanvasQTAgg`. Shares `cipher_tools.evaluate_key` and `visualize.draw_bijective_scatter`/`draw_heatmap` — no logic duplicated across CLI, batch script, and GUI | `src/gui_app.py` |
+| Live-demo GUI (desktop) | PySide6 desktop app for the presentation: message + key-matrix entry, the 4 preset evaluation cases, a "Run Transformation" button (plots render on demand, not per-keystroke), a text report pane, and the same scatter/heatmap plots embedded live via `FigureCanvasQTAgg`. Shares `cipher_tools.evaluate_key` and `visualize.draw_bijective_scatter`/`draw_heatmap` — no logic duplicated across CLI, batch script, and GUI | `src/gui_app.py` |
+| Live-demo GUI (web) | Streamlit app — same math/cases as the desktop GUI (imports `cipher_tools` and `visualize.CASES`/`draw_*` directly, no duplicated logic), runs in any browser so it opens on any device without a Python install for viewers if deployed to Streamlit Community Cloud. Sidebar: message input, K-matrix number inputs, 4 preset buttons. Main panel: det/gcd/invertibility metric cards, full digraph-by-digraph encoding table, decrypted-text success banner or SingularKeyError alert with kernel size + null vector + a real collision from the entered message's own first digraph, and the live scatter/heatmap plot. Run: `streamlit run src/app.py` | `src/app.py` |
 | Written report (source) | Markdown/LaTeX/Word source for the 5–8 page report | N/A |
 | Written report (final PDF) | Final exported report for submission | N/A |
 | Presentation slides | Slide deck source/export | N/A |
 | Demo recording (backup) | Recorded fallback for the live demo | N/A |
 | Sample encoded/decoded output | Example run output used in the report's Results section | N/A |
 
-**Environment note**: the system default `python3` on at least one dev machine is a 3.15 beta with no matplotlib/PySide6 wheels yet (build from source fails, e.g. matplotlib's `freetype` download). `visualize.py` and `gui_app.py` need matplotlib (and `gui_app.py` also needs PySide6), so run both from a stable-Python venv, e.g.:
+**Environment note**: the system default `python3` on at least one dev machine is a 3.15 beta with no matplotlib/PySide6/streamlit wheels yet (build from source fails, e.g. matplotlib's `freetype` download). Run everything except the core module/CLI/tests from a stable-Python venv, e.g.:
 
 ```bash
-python3.12 -m venv .venv && source .venv/bin/activate && pip install numpy matplotlib PySide6
+python3.12 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt      # core + visualize.py + app.py (web)
+pip install -r requirements-gui.txt                                                            # adds PySide6 for gui_app.py (desktop)
 ```
 
-`cipher_tools.py`, `terminal_tools.py`, and `test_verify.py` only need numpy and are unaffected. Launch the GUI with `python3 src/gui_app.py` (from inside the venv).
+`cipher_tools.py`, `terminal_tools.py`, and `test_verify.py` only need numpy and are unaffected. Launch the desktop GUI with `python3 src/gui_app.py`, or the web app with `streamlit run src/app.py` (both from inside the venv).
 | Lecture note | Lecture note for MAT-208 | `Week 4-5 Linear Transformation.pdf` & `Week 2-3 Basic Vector and Matrix Operations.pdf` |
 
 **Instructions for updating this table**: whenever a team member creates or moves a file that this project depends on, add/update its row here in the same commit or session. This keeps Claude Code (or any collaborator) able to locate and re-validate the current state of the repo without guessing paths.
